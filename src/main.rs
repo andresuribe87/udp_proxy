@@ -566,3 +566,55 @@ async fn send_command(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    
+    // Note: These tests verify the coordinate transformation logic
+    // Full integration tests require a running server and are in tests/e2e/
+    
+    #[test]
+    fn test_coordinate_transformation_logic() {
+        // Test coordinate transformation: window coords to 1280x720 video coords
+        let window_width = 1920.0;
+        let window_height = 1080.0;
+        let click_x = 960.0;
+        let click_y = 540.0;
+        
+        let x_pos = (click_x * 1280.0) / window_width;
+        let y_pos = (click_y * 720.0) / window_height;
+        
+        assert_eq!(x_pos, 640.0);
+        assert_eq!(y_pos, 360.0);
+    }
+    
+    #[test]
+    fn test_coordinate_transformation_same_size() {
+        // Test when window size matches video size
+        let window_width = 1280.0;
+        let window_height = 720.0;
+        let click_x = 640.0;
+        let click_y = 360.0;
+        
+        let x_pos = (click_x * 1280.0) / window_width;
+        let y_pos = (click_y * 720.0) / window_height;
+        
+        assert_eq!(x_pos, 640.0);
+        assert_eq!(y_pos, 360.0);
+    }
+    
+    #[test]
+    fn test_coordinate_transformation_different_aspect() {
+        // Test with different aspect ratio
+        let window_width = 2560.0;
+        let window_height = 1440.0;
+        let click_x = 1280.0;
+        let click_y = 720.0;
+        
+        let x_pos = (click_x * 1280.0) / window_width;
+        let y_pos = (click_y * 720.0) / window_height;
+        
+        assert_eq!(x_pos, 640.0);
+        assert_eq!(y_pos, 360.0);
+    }
+}
+

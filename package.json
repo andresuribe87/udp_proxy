@@ -1,0 +1,18 @@
+{
+  "name": "udp-proxy-e2e",
+  "version": "1.0.0",
+  "description": "E2E tests for UDP proxy video controls",
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:ui": "playwright test --project=chromium --ui",
+    "test:e2e:headed": "playwright test --project=chromium --headed",
+    "test:e2e:gif": "./scripts/create-test-gif.sh",
+    "test:e2e:report": "./scripts/open-report.sh",
+    "test:e2e:open": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^25.0.3"
+  }
+}
