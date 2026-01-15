@@ -14,6 +14,55 @@ cd udp_proxy
 cargo build --release
 ```
 
+### Cross-Compilation for ARM64
+
+This project can be cross-compiled for ARM64 (aarch64) architecture from an x86_64 WSL environment.
+
+#### Prerequisites
+
+1. **Install ARM64 Rust target:**
+   ```bash
+   rustup target add aarch64-unknown-linux-gnu
+   ```
+
+2. **Install cross-compilation toolchain (WSL/Ubuntu/Debian):**
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+   ```
+
+#### Building for ARM64
+
+**Option 1: Using the build script (recommended):**
+```bash
+./scripts/build-arm64.sh
+```
+
+**Option 2: Using Cargo directly:**
+```bash
+cargo build --release --target aarch64-unknown-linux-gnu
+```
+
+The compiled binary will be located at:
+```
+target/aarch64-unknown-linux-gnu/release/udp_proxy
+```
+
+#### Verifying the Binary
+
+To verify the binary is compiled for ARM64:
+```bash
+file target/aarch64-unknown-linux-gnu/release/udp_proxy
+```
+
+You should see output indicating `aarch64` architecture.
+
+#### Troubleshooting
+
+- **"linker `aarch64-linux-gnu-gcc` not found"**: Make sure you've installed the cross-compilation toolchain packages.
+- **"target not installed"**: Run `rustup target add aarch64-unknown-linux-gnu`.
+- **Build errors**: Ensure all dependencies are compatible with ARM64. Most Rust crates support cross-compilation, but some native dependencies may require additional setup.
+
 ## Running
 
 ```bash
