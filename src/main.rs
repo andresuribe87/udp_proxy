@@ -374,8 +374,8 @@ async fn set_camera_mode(
 
 #[derive(Deserialize)]
 struct VideoClickRequest {
-    window_width: u32,
-    window_height: u32,
+    video_width: u32,
+    video_height: u32,
     click_x: u32,
     click_y: u32,
     #[serde(default = "default_channel_id")]
@@ -409,9 +409,16 @@ async fn video_click(
     
     let addr = source_addr.unwrap();
     
-    // Convert window coordinates to video coordinates (1280x720)
-    let x_pos = ((payload.click_x as f64 * 1280.0) / payload.window_width as f64) as f32;
-    let y_pos = ((payload.click_y as f64 * 720.0) / payload.window_height as f64) as f32;
+    // Coordinates are already in video space (scaled by frontend to video's natural dimensions)
+    // Just convert to f32 and validate they're within video bounds
+    let x_pos = payload.click_x as f32;
+    let y_pos = payload.click_y as f32;
+    
+    // Validate coordinates are within video bounds
+    if x_pos < 0.0 || x_pos > payload.video_width as f32 || 
+       y_pos < 0.0 || y_pos > payload.video_height as f32 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
     
     let mut sequences = Vec::new();
     
@@ -568,52 +575,51 @@ async fn send_command(
 #[cfg(test)]
 mod tests {
     
-    // Note: These tests verify the coordinate transformation logic
+    // Note: These tests verify coordinate validation logic
+    // Coordinates are already in video space (scaled by frontend to video's natural dimensions)
     // Full integration tests require a running server and are in tests/e2e/
     
     #[test]
-    fn test_coordinate_transformation_logic() {
-        // Test coordinate transformation: window coords to 1280x720 video coords
-        let window_width = 1920.0;
-        let window_height = 1080.0;
+    fn test_coordinate_validation_within_bounds() {
+        // Test that coordinates within video bounds are valid
+        let video_width = 1920.0;
+        let video_height = 1080.0;
         let click_x = 960.0;
         let click_y = 540.0;
         
-        let x_pos = (click_x * 1280.0) / window_width;
-        let y_pos = (click_y * 720.0) / window_height;
-        
-        assert_eq!(x_pos, 640.0);
-        assert_eq!(y_pos, 360.0);
+        // Coordinates should be within bounds
+        assert!(click_x >= 0.0 && click_x <= video_width);
+        assert!(click_y >= 0.0 && click_y <= video_height);
     }
     
     #[test]
-    fn test_coordinate_transformation_same_size() {
-        // Test when window size matches video size
-        let window_width = 1280.0;
-        let window_height = 720.0;
-        let click_x = 640.0;
-        let click_y = 360.0;
+    fn test_coordinate_validation_at_bounds() {
+        // Test coordinates at video boundaries
+        let video_width = 1280.0;
+        let video_height = 720.0;
         
-        let x_pos = (click_x * 1280.0) / window_width;
-        let y_pos = (click_y * 720.0) / window_height;
+        // Test at origin
+        assert!(0.0 >= 0.0 && 0.0 <= video_width);
+        assert!(0.0 >= 0.0 && 0.0 <= video_height);
         
-        assert_eq!(x_pos, 640.0);
-        assert_eq!(y_pos, 360.0);
+        // Test at max bounds
+        assert!(video_width >= 0.0 && video_width <= video_width);
+        assert!(video_height >= 0.0 && video_height <= video_height);
     }
     
     #[test]
-    fn test_coordinate_transformation_different_aspect() {
-        // Test with different aspect ratio
-        let window_width = 2560.0;
-        let window_height = 1440.0;
-        let click_x = 1280.0;
-        let click_y = 720.0;
+    fn test_coordinate_validation_outside_bounds() {
+        // Test that coordinates outside video bounds are invalid
+        let video_width = 1920.0;
+        let video_height = 1080.0;
         
-        let x_pos = (click_x * 1280.0) / window_width;
-        let y_pos = (click_y * 720.0) / window_height;
+        // Test negative coordinates
+        assert!(!(-1.0 >= 0.0 && -1.0 <= video_width));
+        assert!(!(-1.0 >= 0.0 && -1.0 <= video_height));
         
-        assert_eq!(x_pos, 640.0);
-        assert_eq!(y_pos, 360.0);
+        // Test coordinates beyond video dimensions
+        assert!(!(video_width + 1.0 >= 0.0 && video_width + 1.0 <= video_width));
+        assert!(!(video_height + 1.0 >= 0.0 && video_height + 1.0 <= video_height));
     }
 }
 

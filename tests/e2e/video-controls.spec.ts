@@ -14,10 +14,69 @@ async function waitForVideo(page: Page) {
   await page.waitForSelector('#video', { timeout: 10000 });
   // Wait a bit for video to potentially load
   await page.waitForTimeout(500);
+  
+  // Set videoWidth and videoHeight on the video element for coordinate calculation
+  // These properties are normally set when video metadata loads, but in tests we need to set them manually
+  await page.evaluate(() => {
+    const videoElement = document.querySelector('#video') as HTMLVideoElement;
+    if (videoElement) {
+      // Delete existing property descriptors if they exist, then set new ones
+      delete (videoElement as any).videoWidth;
+      delete (videoElement as any).videoHeight;
+      Object.defineProperty(videoElement, 'videoWidth', { 
+        value: 1920, 
+        writable: false, 
+        configurable: true,
+        enumerable: true
+      });
+      Object.defineProperty(videoElement, 'videoHeight', { 
+        value: 1080, 
+        writable: false, 
+        configurable: true,
+        enumerable: true
+      });
+    }
+  });
+  
+  // Verify properties are accessible from Playwright
+  const videoWidth = await page.evaluate(() => {
+    const videoElement = document.querySelector('#video') as HTMLVideoElement;
+    return videoElement?.videoWidth || 0;
+  });
+  const videoHeight = await page.evaluate(() => {
+    const videoElement = document.querySelector('#video') as HTMLVideoElement;
+    return videoElement?.videoHeight || 0;
+  });
+  
+  if (videoWidth === 0 || videoHeight === 0) {
+    throw new Error(`Video dimensions not set correctly: videoWidth=${videoWidth}, videoHeight=${videoHeight}`);
+  }
 }
 
 // Helper to mock backend responses
 async function setupBackendMocks(page: Page) {
+  // Mock /config endpoint to return backend API configuration
+  // The test server also handles this, but we mock it here for consistency
+  await page.route('**/config', async (route) => {
+    const requestUrl = route.request().url();
+    const url = new URL(requestUrl);
+    const backendApiPort = 8081; // Default backend API port
+    const backendApiUrl = `${url.protocol}//${url.hostname}:${backendApiPort}`;
+    
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: { 
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS'
+      },
+      body: JSON.stringify({
+        backend_api_port: backendApiPort,
+        backend_api_url: backendApiUrl
+      })
+    });
+  });
+
   // Mock WHEP endpoint (WebRTC) to prevent connection errors
   await page.route('**/whep*', async (route) => {
     if (route.request().method() === 'OPTIONS') {
@@ -39,9 +98,10 @@ async function setupBackendMocks(page: Page) {
     const request = route.request();
     const postData = request.postDataJSON();
     
-    // Calculate expected transformed coordinates
-    const xPos = (postData.click_x * 1280) / postData.window_width;
-    const yPos = (postData.click_y * 720) / postData.window_height;
+    // Coordinates are already in video space (scaled by frontend to video's natural dimensions)
+    // No transformation needed - just use coordinates directly
+    const xPos = postData.click_x;
+    const yPos = postData.click_y;
     
     await route.fulfill({
       status: 200,
@@ -85,6 +145,12 @@ test.describe('Video Click Controls', () => {
     
     // Navigate to the video page
     await page.goto('/webrtc/index.html');
+    
+    // Wait for config to be fetched and video element to be initialized
+    // The frontend now waits for initBackendUrl() before creating the video element
+    // Give it time to fetch config and initialize
+    await page.waitForTimeout(1000);
+    
     await waitForVideo(page);
   });
 
@@ -214,8 +280,8 @@ test.describe('Video Click Controls', () => {
     expect(requestData).not.toBeNull();
     expect(requestData.command_type).toBe('Tracking');
     expect(requestData.channel_id).toBe(0);
-    expect(typeof requestData.window_width).toBe('number');
-    expect(typeof requestData.window_height).toBe('number');
+    expect(typeof requestData.video_width).toBe('number');
+    expect(typeof requestData.video_height).toBe('number');
     expect(typeof requestData.click_x).toBe('number');
     expect(typeof requestData.click_y).toBe('number');
 

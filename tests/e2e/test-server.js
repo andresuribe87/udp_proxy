@@ -70,6 +70,20 @@ const server = createServer((req, res) => {
   // Remove query string
   filePath = filePath.split('?')[0];
   
+  // Handle /config endpoint for E2E tests
+  if (filePath === '/config') {
+    const backendApiPort = process.env.BACKEND_API_PORT || 8081;
+    const url = new URL(`http://${req.headers.host || 'localhost:8889'}`);
+    const backendApiUrl = `${url.protocol}//${url.hostname}:${backendApiPort}`;
+    
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      backend_api_port: parseInt(backendApiPort),
+      backend_api_url: backendApiUrl
+    }));
+    return;
+  }
+  
   // Handle /webrtc/ paths - serve from static/webrtc/
   // Paths starting with /webrtc/ are already correct, no transformation needed
   if (filePath === '/webrtc' || filePath === '/webrtc/') {
