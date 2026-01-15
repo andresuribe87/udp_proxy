@@ -68,8 +68,7 @@ fn parse_mavlink_packet(data: &[u8], direction: &str) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Info)
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .init();
     
     let args = Args::parse();
