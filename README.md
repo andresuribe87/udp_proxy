@@ -1,11 +1,20 @@
 # UDP Proxy
 
-A Rust-based UDP proxy that connects port 10999 with port 10124.
+A Rust-based MAVLink UDP proxy that forwards MAVLink messages between a client and a remote address, with HTTP endpoints for camera control commands.
+
+## Description
+
+This proxy acts as a bidirectional UDP forwarder for MAVLink protocol messages. It listens on a configurable port for incoming MAVLink packets, forwards them to a remote address, and routes responses back to the original sender. Additionally, it provides HTTP REST endpoints for triggering camera control commands (trigger camera, set camera mode, and video click tracking).
 
 ## Functionality
 
-- **Port 10999**: Listens for incoming UDP packets and forwards them to port 10124
-- **Port 10124**: Listens for incoming UDP packets and forwards them to the last 5 clients who have connected to port 10999
+- **UDP Forwarding**: Listens on a configurable port (default: 10124) and forwards incoming MAVLink packets to a specified remote address
+- **Bidirectional Communication**: Tracks the last source address and automatically forwards responses from the remote address back to the original sender
+- **MAVLink Parsing**: Parses and logs MAVLink messages (both v1 and v2) for debugging and monitoring
+- **HTTP API**: Provides REST endpoints for camera control:
+  - `/trigger-camera` - Trigger camera capture
+  - `/set-camera-mode` - Set camera mode (photo/video)
+  - `/video-click` - Send tracking/refine location commands based on video click coordinates
 
 ## Building
 
@@ -63,26 +72,131 @@ You should see output indicating `aarch64` architecture.
 - **"target not installed"**: Run `rustup target add aarch64-unknown-linux-gnu`.
 - **Build errors**: Ensure all dependencies are compatible with ARM64. Most Rust crates support cross-compilation, but some native dependencies may require additional setup.
 
-## Running
+## Usage
+
+### Command-Line Arguments
 
 ```bash
-cargo run --release
+udp_proxy [OPTIONS]
+
+Options:
+  -l, --listen-port <PORT>     Port to listen on (default: 10124)
+  -f, --forward-addr <ADDR>    Address to forward packets to (format: IP:PORT) [required]
+      --http-port <PORT>       HTTP port for command endpoints (default: 8080)
+  -h, --help                   Print help
 ```
 
-Or run the compiled binary:
+### Running
+
+**Basic usage:**
 ```bash
-./target/release/udp_proxy
+cargo run --release -- --forward-addr 127.0.0.1:14550
 ```
+
+**With custom ports:**
+```bash
+cargo run --release -- --listen-port 10124 --forward-addr 192.168.1.100:14550 --http-port 8080
+```
+
+**Run the compiled binary:**
+```bash
+./target/release/udp_proxy --forward-addr 127.0.0.1:14550
+```
+
+### HTTP API Endpoints
+
+The proxy exposes HTTP endpoints on the configured HTTP port (default: 8080):
+
+#### 1. Trigger Camera
+```bash
+POST http://localhost:8080/trigger-camera
+```
+
+Triggers a camera capture command (MAV_CMD_DO_DIGICAM_CONTROL).
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Command sent",
+  "target": "127.0.0.1:12345",
+  "sequence": 0
+}
+```
+
+#### 2. Set Camera Mode
+```bash
+POST http://localhost:8080/set-camera-mode
+Content-Type: application/json
+
+{
+  "mode": 0.0  // 0.0 = photo mode, 1.0 = video mode
+}
+```
+
+Sets the camera mode (photo or video).
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Camera mode set",
+  "target": "127.0.0.1:12345",
+  "mode": 0.0,
+  "sequence": 1
+}
+```
+
+#### 3. Video Click (Tracking/Refine Location)
+```bash
+POST http://localhost:8080/video-click
+Content-Type: application/json
+
+{
+  "window_width": 1920,
+  "window_height": 1080,
+  "click_x": 960,
+  "click_y": 540,
+  "channel_id": 0,
+  "command_type": "Tracking"  // "Tracking", "RefineLocation", or "Both"
+}
+```
+
+Sends tracking or refine location commands based on video click coordinates. The coordinates are automatically converted from window coordinates to 1280x720 video coordinates.
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Tracking command(s) sent",
+  "target": "127.0.0.1:12345",
+  "x_pos": 640.0,
+  "y_pos": 360.0,
+  "channel_id": 0,
+  "command_type": "Tracking",
+  "sequences": [2]
+}
+```
+
+**Note:** All endpoints return `503 Service Unavailable` if no UDP client has connected yet (no source address tracked).
 
 ## How it works
 
-1. The program listens on both ports 10999 and 10124 simultaneously
-2. When a packet arrives on port 10999:
-   - The client address is tracked (maintaining the last 5 unique clients)
-   - The packet is forwarded to 127.0.0.1:10124
-3. When a packet arrives on port 10124:
-   - The packet is forwarded to all currently tracked clients (up to 5)
-   - If no clients have connected yet, the packet is dropped
+1. **UDP Forwarding Task**: The proxy listens on the configured listen port (default: 10124) for incoming MAVLink packets
+   - When a packet arrives, the source address is tracked (maintains the most recent source)
+   - The packet is parsed as MAVLink and logged
+   - The packet is forwarded to the configured forward address
+
+2. **Response Forwarding Task**: The proxy listens for responses from the forward address
+   - When a response arrives, it's parsed as MAVLink and logged
+   - The response is forwarded back to the last tracked source address
+   - If no source address has been tracked yet, the response is dropped
+
+3. **HTTP Server Task**: Runs an HTTP server on the configured HTTP port (default: 8080)
+   - Provides REST endpoints for camera control commands
+   - Commands are serialized as MAVLink COMMAND_LONG messages
+   - Messages are sent to the last tracked UDP source address
+   - Sequence numbers are automatically incremented for each command
 
 ## Related Projects
 
