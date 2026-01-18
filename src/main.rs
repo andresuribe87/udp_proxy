@@ -12,7 +12,7 @@ use axum::{
     routing::post,
     Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use mavlink::read_any_msg;
 use mavlink::write_v2_msg;
@@ -57,11 +57,11 @@ fn parse_mavlink_packet(data: &[u8], direction: &str) {
             // Extract message type name from the Debug representation
             let msg_type = format!("{:?}", msg);
             let msg_type_name = msg_type.split('(').next().unwrap_or(&msg_type);
-            info!("[{}] MAVLink message: Type={}, System={}, Component={}, Sequence={}, Message={:?}", 
+            debug!("[{}] MAVLink message: Type={}, System={}, Component={}, Sequence={}, Message={:?}", 
                   direction, msg_type_name, header.system_id, header.component_id, header.sequence, msg);
         }
         Err(e) => {
-            warn!("[{}] Failed to parse as MAVLink message ({} bytes): {}", direction, data.len(), e);
+            debug!("[{}] Failed to parse as MAVLink message ({} bytes): {}", direction, data.len(), e);
         }
     }
 }
@@ -188,12 +188,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .route("/trigger-camera", post(trigger_camera_command))
             .route("/set-camera-mode", post(set_camera_mode))
             .route("/video-click", post(video_click))
+            .route("/camera-command", post(camera_command))
             .with_state(app_state);
         
         let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_port)).await
             .expect("Failed to bind HTTP server");
         
-        info!("HTTP server listening on port {} at /trigger-camera, /set-camera-mode, /video-click", http_port);
+        info!("HTTP server listening on port {} at /trigger-camera, /set-camera-mode, /video-click, /camera-command", http_port);
         
         axum::serve(listener, app).await
             .expect("HTTP server error");
@@ -390,6 +391,68 @@ fn default_channel_id() -> u32 {
 
 fn default_command_type() -> String {
     "Tracking".to_string()
+}
+
+#[derive(Deserialize)]
+struct CameraCommandRequest {
+    param1: f32,
+    param2: f32,
+    param3: f32,
+    param4: f32,
+    param5: f32,
+    param6: f32,
+    param7: f32,
+}
+
+/// HTTP handler for general camera commands
+async fn camera_command(
+    State(state): State<AppState>,
+    Json(payload): Json<CameraCommandRequest>,
+) -> Result<Json<Value>, StatusCode> {
+    // Get the last source address
+    let source_addr = {
+        let last = state.last_source.lock().await;
+        *last
+    };
+    
+    if source_addr.is_none() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    
+    let addr = source_addr.unwrap();
+    
+    // Use the send_command helper function
+    match send_command(
+        &state,
+        addr,
+        payload.param1,
+        payload.param2,
+        payload.param3,
+        payload.param4,
+        payload.param5,
+        payload.param6,
+        payload.param7,
+    ).await {
+        Ok(sequence) => {
+            info!("Sent camera command to {} (sequence={})", addr, sequence);
+            Ok(Json(json!({
+                "status": "success",
+                "message": "Camera command sent",
+                "target": addr.to_string(),
+                "sequence": sequence,
+                "params": {
+                    "param1": payload.param1,
+                    "param2": payload.param2,
+                    "param3": payload.param3,
+                    "param4": payload.param4,
+                    "param5": payload.param5,
+                    "param6": payload.param6,
+                    "param7": payload.param7,
+                }
+            })))
+        }
+        Err(e) => Err(e)
+    }
 }
 
 /// HTTP handler to handle video click

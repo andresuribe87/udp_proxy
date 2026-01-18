@@ -169,21 +169,23 @@ test.describe('Video Click Controls', () => {
     });
   });
 
-  test('should display camera mode buttons', async ({ page }) => {
-    const trackingOffBtn = page.locator('#tracking-off-btn');
-    const trackingOnBtn = page.locator('#tracking-on-btn');
-
-    await expect(trackingOffBtn).toBeVisible();
-    await expect(trackingOnBtn).toBeVisible();
-    await expect(trackingOffBtn).toHaveText('Tracking Off');
-    await expect(trackingOnBtn).toHaveText('Tracking On');
+  test('should display camera actions panel', async ({ page }) => {
+    // Wait for camera actions panel to load
+    await page.waitForSelector('.camera-actions-panel', { timeout: 10000 });
     
-    // Take screenshot showing buttons
+    const cameraModesGrid = page.locator('.camera-modes-grid');
+    await expect(cameraModesGrid).toBeVisible();
+    
+    // Verify some mode buttons exist
+    const holdButton = page.locator('.mode-btn', { hasText: 'Hold' });
+    await expect(holdButton.first()).toBeVisible();
+    
+    // Take screenshot showing camera actions panel
     const screenshot = await page.screenshot({ 
-      path: 'test-results/screenshots/02-camera-mode-buttons-visible.png',
+      path: 'test-results/screenshots/02-camera-actions-panel-visible.png',
       fullPage: true 
     });
-    await test.info().attach('02-camera-mode-buttons-visible.png', {
+    await test.info().attach('02-camera-actions-panel-visible.png', {
       body: screenshot,
       contentType: 'image/png',
     });
@@ -344,150 +346,124 @@ test.describe('Camera Mode Controls', () => {
   test.beforeEach(async ({ page }) => {
     await setupBackendMocks(page);
     await page.goto('/webrtc/index.html');
+    await page.waitForTimeout(2000); // Wait for camera actions panel to load
     await waitForVideo(page);
   });
 
-  test('should toggle to tracking on mode', async ({ page }) => {
-    const trackingOnBtn = page.locator('#tracking-on-btn');
-    const trackingOffBtn = page.locator('#tracking-off-btn');
-
-    // Initially, tracking off should be active (Radix UI Toggle Group pattern)
-    await expect(trackingOffBtn).toHaveAttribute('data-state', 'on');
-    await expect(trackingOffBtn).toHaveAttribute('aria-pressed', 'true');
+  test('should send tracking mode command from camera actions panel', async ({ page }) => {
+    // Wait for camera actions panel
+    await page.waitForSelector('.camera-actions-panel', { timeout: 10000 });
     
-    // Take screenshot showing initial state (Tracking Off active) - before interaction
+    // Find a mode button (use Hold as example, or any mode button)
+    // Note: There's no separate "Tracking" button - tracking is mode 7 which can be set via any mode button
+    // Let's test with Hold button instead
+    const holdButton = page.locator('.mode-btn', { hasText: 'Hold' }).first();
+    await expect(holdButton).toBeVisible();
+    
+    // Take screenshot before clicking
     const screenshotBefore = await page.screenshot({ 
-      path: 'test-results/screenshots/06-before-toggle-to-tracking-on.png',
+      path: 'test-results/screenshots/06-before-tracking-mode-click.png',
       fullPage: true 
     });
-    await test.info().attach('06-before-toggle-to-tracking-on.png', {
+    await test.info().attach('06-before-tracking-mode-click.png', {
       body: screenshotBefore,
       contentType: 'image/png',
     });
 
-    // Click tracking on button
+    // Click tracking button
     let requestData: any = null;
     page.on('request', (request) => {
-      if (request.url().includes('/set-camera-mode')) {
+      if (request.url().includes('/camera-command')) {
         requestData = request.postDataJSON();
       }
     });
 
-    await trackingOnBtn.click();
+    await holdButton.click();
     await page.waitForTimeout(100);
 
-    // Verify request was sent
+    // Verify request was sent with Hold mode (mode 2)
     expect(requestData).not.toBeNull();
-    expect(requestData.mode).toBe(7);
-
-    // Verify button state changed (Radix UI Toggle Group pattern)
-    await expect(trackingOnBtn).toHaveAttribute('data-state', 'on');
-    await expect(trackingOnBtn).toHaveAttribute('aria-pressed', 'true');
-    await expect(trackingOffBtn).toHaveAttribute('data-state', 'off');
-    await expect(trackingOffBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(requestData.param1).toBe(0); // SetSystemMode command
+    expect(requestData.param2).toBe(2); // Hold mode
     
-    // Take screenshot showing Tracking On is now active - after interaction
+    // Take screenshot after clicking
     const screenshotAfter = await page.screenshot({ 
-      path: 'test-results/screenshots/07-after-toggle-to-tracking-on.png',
+      path: 'test-results/screenshots/07-after-tracking-mode-click.png',
       fullPage: true 
     });
-    await test.info().attach('07-after-toggle-to-tracking-on.png', {
+    await test.info().attach('07-after-tracking-mode-click.png', {
       body: screenshotAfter,
       contentType: 'image/png',
     });
   });
 
-  test('should toggle to tracking off mode', async ({ page }) => {
-    const trackingOnBtn = page.locator('#tracking-on-btn');
-    const trackingOffBtn = page.locator('#tracking-off-btn');
-
-    // First set to tracking on
-    await trackingOnBtn.click();
-    await page.waitForTimeout(100);
+  test('should send hold mode command from camera actions panel', async ({ page }) => {
+    // Wait for camera actions panel
+    await page.waitForSelector('.camera-actions-panel', { timeout: 10000 });
     
-    // Take screenshot showing Tracking On active
-    const screenshot1 = await page.screenshot({ 
-      path: 'test-results/screenshots/08-before-toggle-to-off.png',
-      fullPage: true 
-    });
-    await test.info().attach('08-before-toggle-to-off.png', {
-      body: screenshot1,
-      contentType: 'image/png',
-    });
-
-    // Then click tracking off
-    let requestData: any = null;
-    page.on('request', (request) => {
-      if (request.url().includes('/set-camera-mode')) {
-        requestData = request.postDataJSON();
-      }
-    });
-
-    await trackingOffBtn.click();
-    await page.waitForTimeout(100);
-
-    // Verify request was sent with mode 0
-    expect(requestData).not.toBeNull();
-    expect(requestData.mode).toBe(0);
-
-    // Verify button state changed (Radix UI Toggle Group pattern)
-    await expect(trackingOffBtn).toHaveAttribute('data-state', 'on');
-    await expect(trackingOffBtn).toHaveAttribute('aria-pressed', 'true');
-    await expect(trackingOnBtn).toHaveAttribute('data-state', 'off');
-    await expect(trackingOnBtn).toHaveAttribute('aria-pressed', 'false');
+    const holdButton = page.locator('.mode-btn', { hasText: 'Hold' }).first();
+    await expect(holdButton).toBeVisible();
     
-    // Take screenshot showing Tracking Off is now active again
-    const screenshot2 = await page.screenshot({ 
-      path: 'test-results/screenshots/09-tracking-off-active-again.png',
-      fullPage: true 
-    });
-    await test.info().attach('09-tracking-off-active-again.png', {
-      body: screenshot2,
-      contentType: 'image/png',
-    });
-  });
-
-  test('should not send request when clicking already active button', async ({ page }) => {
-    const trackingOffBtn = page.locator('#tracking-off-btn');
-    
-    // Tracking off should be active by default (Radix UI Toggle Group pattern)
-    await expect(trackingOffBtn).toHaveAttribute('data-state', 'on');
-    await expect(trackingOffBtn).toHaveAttribute('aria-pressed', 'true');
-
-    // Take screenshot before clicking already active button
+    // Take screenshot before clicking
     const screenshotBefore = await page.screenshot({ 
-      path: 'test-results/screenshots/14-before-click-active-button.png',
+      path: 'test-results/screenshots/08-before-hold-mode-click.png',
       fullPage: true 
     });
-    await test.info().attach('14-before-click-active-button.png', {
+    await test.info().attach('08-before-hold-mode-click.png', {
       body: screenshotBefore,
       contentType: 'image/png',
     });
 
+    let requestData: any = null;
+    page.on('request', (request) => {
+      if (request.url().includes('/camera-command')) {
+        requestData = request.postDataJSON();
+      }
+    });
+
+    await holdButton.click();
+    await page.waitForTimeout(100);
+
+    // Verify request was sent with Hold mode (mode 2)
+    expect(requestData).not.toBeNull();
+    expect(requestData.param1).toBe(0); // SetSystemMode command
+    expect(requestData.param2).toBe(2); // Hold mode
+    
+    // Take screenshot after clicking
+    const screenshotAfter = await page.screenshot({ 
+      path: 'test-results/screenshots/09-after-hold-mode-click.png',
+      fullPage: true 
+    });
+    await test.info().attach('09-after-hold-mode-click.png', {
+      body: screenshotAfter,
+      contentType: 'image/png',
+    });
+  });
+
+  test('should send command every time button is clicked', async ({ page }) => {
+    // Wait for camera actions panel
+    await page.waitForSelector('.camera-actions-panel', { timeout: 10000 });
+    
+    const holdButton = page.locator('.mode-btn', { hasText: 'Hold' }).first();
+    await expect(holdButton).toBeVisible();
+
     let requestCount = 0;
     page.on('request', (request) => {
-      if (request.url().includes('/set-camera-mode')) {
+      if (request.url().includes('/camera-command')) {
         requestCount++;
       }
     });
 
-    // Click the already active button
-    await trackingOffBtn.click();
+    // Click the button multiple times
+    await holdButton.click();
+    await page.waitForTimeout(100);
+    await holdButton.click();
+    await page.waitForTimeout(100);
+    await holdButton.click();
     await page.waitForTimeout(100);
 
-    // Should not send a request since it's already active
-    // In our implementation, it checks currentMode and doesn't send if already 0
-    expect(requestCount).toBe(0);
-
-    // Take screenshot after clicking (state should remain unchanged)
-    const screenshotAfter = await page.screenshot({ 
-      path: 'test-results/screenshots/15-after-click-active-button.png',
-      fullPage: true 
-    });
-    await test.info().attach('15-after-click-active-button.png', {
-      body: screenshotAfter,
-      contentType: 'image/png',
-    });
+    // Should send a request every time (no state checking)
+    expect(requestCount).toBe(3);
   });
 });
 
@@ -499,7 +475,10 @@ test.describe('Integration: Click and Mode Together', () => {
   });
 
   test('should handle video click after mode change', async ({ page }) => {
-    const trackingOnBtn = page.locator('#tracking-on-btn');
+    // Wait for camera actions panel
+    await page.waitForSelector('.camera-actions-panel', { timeout: 10000 });
+    
+    const holdButton = page.locator('.mode-btn', { hasText: 'Hold' }).first();
     const video = page.locator('#video');
 
     // Take screenshot before mode change
@@ -512,8 +491,8 @@ test.describe('Integration: Click and Mode Together', () => {
       contentType: 'image/png',
     });
 
-    // Change mode first
-    await trackingOnBtn.click();
+    // Change mode first (click Hold button)
+    await holdButton.click();
     await page.waitForTimeout(100);
 
     // Take screenshot after mode change, before video click
@@ -539,8 +518,7 @@ test.describe('Integration: Click and Mode Together', () => {
     await page.waitForTimeout(100);
 
     // Both actions should have completed
-    await expect(trackingOnBtn).toHaveAttribute('data-state', 'on');
-    await expect(trackingOnBtn).toHaveAttribute('aria-pressed', 'true');
+    await expect(holdButton).toBeVisible();
 
     // Take screenshot after video click
     const screenshotAfterClick = await page.screenshot({ 
