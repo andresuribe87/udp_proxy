@@ -20,6 +20,10 @@ struct Args {
     /// Optional source IP allowlist for inbound packets.
     #[arg(long)]
     allowed_source_ip: Option<IpAddr>,
+
+    /// Send each accepted packet to the forward address twice (same payload, sequential sends).
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    duplicate_packets: bool,
 }
 
 #[tokio::main]
@@ -34,6 +38,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(ip) = args.allowed_source_ip {
         info!("Allowing packets only from source IP {}", ip);
+    }
+    if args.duplicate_packets {
+        info!("Duplicate forwarding enabled: each packet is sent twice to {}", args.forward_addr);
     }
 
     let mut buf = [0u8; 65507];
@@ -52,9 +59,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 match socket.send_to(&buf[..size], args.forward_addr).await {
-                    Ok(sent) => {
+                    Ok(sent_first) => {
+                        let mut bytes_sent = sent_first as u64;
+                        if args.duplicate_packets {
+                            match socket.send_to(&buf[..size], args.forward_addr).await {
+                                Ok(sent_second) => bytes_sent += sent_second as u64,
+                                Err(err) => error!(
+                                    "Failed duplicate send of {} bytes from {} to {}: {}",
+                                    size, source_addr, args.forward_addr, err
+                                ),
+                            }
+                        }
                         packet_count += 1;
-                        byte_count += sent as u64;
+                        byte_count += bytes_sent;
 
                         if last_report.elapsed() >= Duration::from_secs(5) {
                             debug!(
